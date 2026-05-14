@@ -14,11 +14,8 @@ PLAB, PWR, Q, RPRX, SDRL, SEI, SFL, SNDK, SOLS, STRL, STX, TRGP, TTMI, TWLO, VIA
 WATCHLIST = [t.strip() for t in WATCHLIST.split(",") if t.strip()]
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
-# Daily Timeframe Configurations
 EMA_LENGTH = 55
 TOUCH_THRESHOLD = 0.02  # +-2%
-DATA_PERIOD = "6mo"     # 6 months guarantees enough bars for a 55-day EMA
-DATA_INTERVAL = "1d"    # Changes data retrieval to 1-Day bars
 
 session = requests.Session()
 
@@ -37,59 +34,59 @@ def send_discord_message(content: str):
     except Exception as e:
         print(f"Failed to send Discord notification: {e}")
 
-def check_touch(ticker: str) -> bool:
+def check_instantaneous_touch(ticker: str) -> tuple[bool, float, float]:
+    """
+    Checks if the live price touches the Daily 55 EMA.
+    Returns: (is_triggered, current_price, daily_ema_val)
+    """
     try:
         t = yf.Ticker(ticker)
-        df = t.history(period=DATA_PERIOD, interval=DATA_INTERVAL, raise_errors=True)
         
-        if df.empty or len(df) < EMA_LENGTH + 2:
-            return False
-
-        # Calculate 55 Daily EMA
-        df["EMA55"] = calculate_ema(df["Close"], EMA_LENGTH)
+        # 1. Fetch historical daily data for stable EMA calculations
+        df_daily = t.history(period="6mo", interval="1d", raise_errors=True)
+        if df_daily.empty or len(df_daily) < EMA_LENGTH:
+            return False, 0.0, 0.0
+            
+        df_daily["EMA55"] = calculate_ema(df_daily["Close"], EMA_LENGTH)
+        daily_ema_val = float(df_daily["EMA55"].iloc[-1])
         
-        latest = df.iloc[-1]
-        prev = df.iloc[-2]
+        # 2. Fetch live instantaneous price data (1-minute intervals)
+        df_live = t.history(period="1d", interval="1m")
+        if df_live.empty:
+            return False, 0.0, 0.0
+            
+        current_price = float(df_live["Close"].iloc[-1])
         
-        ema_val = float(latest["EMA55"])
-        close_price = float(latest["Close"])
-        high_price = float(latest["High"])
-        low_price = float(latest["Low"])
+        # 3. Calculate boundary mathematically
+        threshold = daily_ema_val * TOUCH_THRESHOLD
+        lower_bound = daily_ema_val - threshold
+        upper_bound = daily_ema_val + threshold
         
-        prev_close = float(prev["Close"])
-        prev_ema = float(prev["EMA55"])
-        
-        # Check if daily High/Low touched the EMA boundary
-        threshold = ema_val * TOUCH_THRESHOLD
-        touched = high_price >= (ema_val - threshold) and low_price <= (ema_val + threshold)
-        
-        # Check for Daily Close crossovers
-        cross_up = prev_close < prev_ema and close_price >= ema_val
-        cross_down = prev_close > prev_ema and close_price <= ema_val
-        
-        if touched or cross_up or cross_down:
-            return True
+        # Trigger if the current exact instantaneous price is inside the boundary
+        if lower_bound <= current_price <= upper_bound:
+            return True, current_price, daily_ema_val
             
     except Exception as e:
         print(f"Error processing {ticker}: {e}")
         
-    return False
+    return False, 0.0, 0.0
 
 def run_once():
-    now_str = datetime.now().strftime("%Y-%m-%d")
-    triggered_tickers = []
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    triggered_messages = []
     
-    print(f"Starting daily scan for {len(WATCHLIST)} tickers...")
+    print(f"Starting live scan for {len(WATCHLIST)} tickers...")
     for ticker in WATCHLIST:
-        if check_touch(ticker):
-            triggered_tickers.append(ticker)
-        time.sleep(0.1)  # Prevents Yahoo Finance rate-limiting
+        triggered, live_price, ema_val = check_instantaneous_touch(ticker)
+        if triggered:
+            triggered_messages.append(f"`{ticker}` (Price: ${live_price:.2f} | Daily EMA55: ${ema_val:.2f})")
+        time.sleep(0.1)  # Rate limiting protection
             
-    if triggered_tickers:
-        result_string = ", ".join(triggered_tickers)
-        send_discord_message(f"🔔 **EMA 55 Daily Triggers ({now_str})**:\n`{result_string}`")
+    if triggered_messages:
+        result_string = "\n".join(triggered_messages)
+        send_discord_message(f"🔔 **Live Tickers Touching Daily 55 EMA ({now_str})**:\n{result_string}")
     else:
-        send_discord_message(f"✅ **Daily Scan Complete ({now_str})**: No triggers found.")
+        send_discord_message(f"✅ **Hourly Scan Complete ({now_str})**: No live prices touching Daily 55 EMA.")
 
 if __name__ == "__main__":
     run_once()
