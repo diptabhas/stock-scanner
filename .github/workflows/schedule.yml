@@ -1,8 +1,6 @@
 name: Hourly Stock Scanner
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
