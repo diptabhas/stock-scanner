@@ -2,9 +2,9 @@ name: Hourly Stock Scanner
 
 on:
   schedule:
-    # Runs at minute 41 of every hour, from 13:29 to 20:29 UTC (Monday through Friday)
-    # This translates perfectly to 8:29 AM - 3:29 PM CDT, covering the active trading session.
-    - cron: '41 13-20 * * 1-5'
+    # Runs at minute 50 of every hour, from 13:50 to 20:50 UTC (Monday through Friday)
+    # This translates to 8:50 AM - 3:50 PM CDT, covering your active market session.
+    - cron: '50 13-20 * * 1-5'
   workflow_dispatch: # Allows you to manually click a button to test run it anytime
 
 jobs:
