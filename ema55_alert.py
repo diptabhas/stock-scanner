@@ -14,12 +14,12 @@ PLAB, PWR, Q, RPRX, SDRL, SEI, SFL, SNDK, SOLS, STRL, STX, TRGP, TTMI, TWLO, VIA
 WATCHLIST = [t.strip() for t in WATCHLIST.split(",") if t.strip()]
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
+# Daily Timeframe Configurations
 EMA_LENGTH = 55
 TOUCH_THRESHOLD = 0.02  # +-2%
-DATA_PERIOD = "1mo"
-DATA_INTERVAL = "1h"
+DATA_PERIOD = "6mo"     # 6 months guarantees enough bars for a 55-day EMA
+DATA_INTERVAL = "1d"    # Changes data retrieval to 1-Day bars
 
-# Use a session object for faster subsequent HTTP requests
 session = requests.Session()
 
 def calculate_ema(series: pd.Series, length: int) -> pd.Series:
@@ -39,14 +39,13 @@ def send_discord_message(content: str):
 
 def check_touch(ticker: str) -> bool:
     try:
-        # Use yf.Ticker to get a clean Single-Index DataFrame for one stock
         t = yf.Ticker(ticker)
         df = t.history(period=DATA_PERIOD, interval=DATA_INTERVAL, raise_errors=True)
         
         if df.empty or len(df) < EMA_LENGTH + 2:
             return False
 
-        # Calculate EMA safely on a flat column structure
+        # Calculate 55 Daily EMA
         df["EMA55"] = calculate_ema(df["Close"], EMA_LENGTH)
         
         latest = df.iloc[-1]
@@ -60,11 +59,11 @@ def check_touch(ticker: str) -> bool:
         prev_close = float(prev["Close"])
         prev_ema = float(prev["EMA55"])
         
-        # Check boundary collision
+        # Check if daily High/Low touched the EMA boundary
         threshold = ema_val * TOUCH_THRESHOLD
         touched = high_price >= (ema_val - threshold) and low_price <= (ema_val + threshold)
         
-        # Check standard crossovers
+        # Check for Daily Close crossovers
         cross_up = prev_close < prev_ema and close_price >= ema_val
         cross_down = prev_close > prev_ema and close_price <= ema_val
         
@@ -72,26 +71,25 @@ def check_touch(ticker: str) -> bool:
             return True
             
     except Exception as e:
-        # Avoid silencing real bugs during development
         print(f"Error processing {ticker}: {e}")
         
     return False
 
 def run_once():
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now_str = datetime.now().strftime("%Y-%m-%d")
     triggered_tickers = []
     
-    print(f"Starting scan for {len(WATCHLIST)} tickers...")
+    print(f"Starting daily scan for {len(WATCHLIST)} tickers...")
     for ticker in WATCHLIST:
         if check_touch(ticker):
             triggered_tickers.append(ticker)
-        time.sleep(0.1) # Polite delay to avoid Yahoo Finance rate limits
+        time.sleep(0.1)  # Prevents Yahoo Finance rate-limiting
             
     if triggered_tickers:
         result_string = ", ".join(triggered_tickers)
-        send_discord_message(f"🔔 **EMA 55 1-Hour Triggers ({now_str})**:\n`{result_string}`")
+        send_discord_message(f"🔔 **EMA 55 Daily Triggers ({now_str})**:\n`{result_string}`")
     else:
-        send_discord_message(f"✅ **Hourly Scan Complete ({now_str})**: No triggers found.")
+        send_discord_message(f"✅ **Daily Scan Complete ({now_str})**: No triggers found.")
 
 if __name__ == "__main__":
     run_once()
