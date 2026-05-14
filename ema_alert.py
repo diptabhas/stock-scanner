@@ -12,14 +12,11 @@ IONQ, JBL, KEYS, KGS, LSCC, MKSI, MOD, MPC, MTSI, MU, NBIS, NVDA, NVT, OUT,
 PLAB, PWR, Q, RPRX, SDRL, SEI, SFL, SNDK, SOLS, STRL, STX, TRGP, TTMI, TWLO, VIAV, WDC 
 """
 WATCHLIST = [t.strip() for t in WATCHLIST.split(",") if t.strip()]
-
-# CRON TIP: If your env var is missing, you can hardcode your webhook URL string here directly
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
-# Configuration
 EMA_PERIODS = [8, 21, 55, 89, 200]
 TOUCH_THRESHOLD = 0.02  # +-2%
-DATA_PERIOD = "2y"      # Need 2 years of daily data to accurately calculate a stable 200 EMA
+DATA_PERIOD = "2y"      # Required for stable 200 EMA calculation
 
 session = requests.Session()
 
@@ -38,28 +35,28 @@ def send_discord_message(content: str):
     except Exception as e:
         print(f"Failed to send Discord notification: {e}")
 
-def check_ema_pullbacks(ticker: str) -> list[str]:
+def check_ema_pullbacks(ticker: str) -> list[int]:
     """
-    Checks if the live price touches any of the tracked daily EMAs.
-    Returns a list of matching trigger strings for this ticker.
+    Checks if live price touches any daily EMAs.
+    Returns a list of matching EMA period integers.
     """
-    triggers = []
+    triggered_periods = []
     try:
         t = yf.Ticker(ticker)
         
-        # 1. Fetch historical daily data (2 years required for stable 200 EMA math)
+        # 1. Fetch historical daily data
         df_daily = t.history(period=DATA_PERIOD, interval="1d", raise_errors=True)
         if df_daily.empty or len(df_daily) < max(EMA_PERIODS):
-            return triggers
+            return triggered_periods
             
-        # 2. Fetch live instantaneous price data (1-minute intervals)
+        # 2. Fetch live instantaneous price data
         df_live = t.history(period="1d", interval="1m")
         if df_live.empty:
-            return triggers
+            return triggered_periods
             
         current_price = float(df_live["Close"].iloc[-1])
         
-        # 3. Process and test each EMA boundary
+        # 3. Process each EMA boundary
         for period in EMA_PERIODS:
             ema_series = calculate_ema(df_daily["Close"], period)
             ema_val = float(ema_series.iloc[-1])
@@ -68,33 +65,37 @@ def check_ema_pullbacks(ticker: str) -> list[str]:
             lower_bound = ema_val - threshold
             upper_bound = ema_val + threshold
             
-            # Check if the live spot price sits within the boundary zone
             if lower_bound <= current_price <= upper_bound:
-                percent_diff = ((current_price - ema_val) / ema_val) * 100
-                triggers.append(f"EMA {period} (EMA: ${ema_val:.2f} | Diff: {percent_diff:+.1f}%)")
+                triggered_periods.append(period)
                 
     except Exception as e:
         print(f"Error processing {ticker}: {e}")
         
-    return triggers
+    return triggered_periods
 
 def run_once():
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    triggered_messages = []
     
-    print(f"Starting multi-EMA live scan for {len(WATCHLIST)} tickers...")
+    # Initialize dictionary structure to hold grouped tickers
+    ema_groups = {period: [] for period in EMA_PERIODS}
+    has_triggers = False
+    
+    print(f"Starting grouped multi-EMA live scan for {len(WATCHLIST)} tickers...")
     for ticker in WATCHLIST:
-        active_pullbacks = check_ema_pullbacks(ticker)
-        if active_pullbacks:
-            # Format multiple triggers cleanly if a stock touches more than one EMA boundary zone
-            ema_details = ", ".join(active_pullbacks)
-            triggered_messages.append(f"📈 `{ticker}` -> {ema_details}")
+        matched_periods = check_ema_pullbacks(ticker)
+        for period in matched_periods:
+            ema_groups[period].append(ticker)
+            has_triggers = True
         time.sleep(0.1)  # Rate limiting protection
             
-    if triggered_messages:
-        # Construct structural visual breakdown for Discord mapping
-        result_string = "\n".join(triggered_messages)
-        send_discord_message(f"🔔 **Live Multi-EMA Pullback Triggers ({now_str})**:\n{result_string}")
+    if has_triggers:
+        # Construct exact output format requested
+        message_lines = [f"🔔 **Live Multi-EMA Pullback Triggers ({now_str})**:"]
+        for period in EMA_PERIODS:
+            tickers_str = ", ".join(ema_groups[period]) if ema_groups[period] else "None"
+            message_lines.append(f"**EMA-{period}**: {tickers_str}")
+            
+        send_discord_message("\n".join(message_lines))
     else:
         send_discord_message(f"✅ **Hourly Scan Complete ({now_str})**: No tickers touching tracked EMAs.")
 
