@@ -26,7 +26,7 @@ from datetime import datetime
 
 # Paste your 1a squeeze screener output tickers here
 WATCHLIST = """
-TICKER1, TICKER2, TICKER3
+DOCU,METC,DRI,OII,CB,NOMD,BG,ADPT,KMB,KVUE,CPRT,IT,LPX,MAT,LIN,CHD,WRB,PARR,CALM,ACAD,IONS,APD,HAS,NVRI,LNT,CNP,WVE,MPLX,D,PNW,NI,NTRA,INCY,HCC,MASI,MIR
 """
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
