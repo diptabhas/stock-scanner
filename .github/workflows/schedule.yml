@@ -1,4 +1,4 @@
-name: Hourly Stock Scanner
+name: EMA Pullback Scanner
 
 on:
   workflow_dispatch:
