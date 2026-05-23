@@ -1,34 +1,35 @@
 name: Combined Screener
-
+ 
 on:
   workflow_dispatch:   # triggered by cron-job.org via GitHub API
-
+ 
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
-
+ 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
+ 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
+ 
       - name: Build data cache (download all tickers once)
         run: python build_cache.py
-
+ 
       - name: Run Breakout From Base Screener
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python breakout_from_base_alert.py
-
+ 
       - name: Run Momentum Surge Screener
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python momentum_surge_alert.py
+ 
